@@ -169,7 +169,10 @@ public class FlutterAccessibilityServicePlugin implements FlutterPlugin, Activit
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         channel.setMethodCallHandler(null);
         eventChannel.setStreamHandler(null);
-        context.unregisterReceiver(actionsReceiver);
+        if (accessibilityReceiver != null) {
+            context.unregisterReceiver(accessibilityReceiver);
+            accessibilityReceiver = null;
+        }
     }
     @SuppressLint("WrongConstant")
     @Override
@@ -195,8 +198,10 @@ public class FlutterAccessibilityServicePlugin implements FlutterPlugin, Activit
 
     @Override
     public void onCancel(Object arguments) {
-        context.unregisterReceiver(accessibilityReceiver);
-        accessibilityReceiver = null;
+        if (accessibilityReceiver != null) {
+            context.unregisterReceiver(accessibilityReceiver);
+            accessibilityReceiver = null;
+        }
     }
 
     @Override

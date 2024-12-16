@@ -37,7 +37,7 @@ import io.flutter.embedding.engine.FlutterEngineCache;
 
 public class AccessibilityListener extends AccessibilityService {
     private static WindowManager mWindowManager;
-    private static FlutterView mOverlayView;
+    // private static FlutterView mOverlayView;
     static private boolean isOverlayShown = false;
     private static final int CACHE_SIZE = 1000;
     private static LruCache<String, AccessibilityNodeInfo> nodeMap =
@@ -190,35 +190,35 @@ public class AccessibilityListener extends AccessibilityService {
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP_MR1)
     @Override
     protected void onServiceConnected() {
-        mWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        mOverlayView = new FlutterView(getApplicationContext(), new FlutterTextureView(getApplicationContext()));
-        mOverlayView.attachToFlutterEngine(FlutterEngineCache.getInstance().get(CACHED_TAG));
-        mOverlayView.setFitsSystemWindows(true);
-        mOverlayView.setFocusable(true);
-        mOverlayView.setFocusableInTouchMode(true);
-        mOverlayView.setBackgroundColor(Color.TRANSPARENT);
+        // mWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        // mOverlayView = new FlutterView(getApplicationContext(), new FlutterTextureView(getApplicationContext()));
+        // mOverlayView.attachToFlutterEngine(FlutterEngineCache.getInstance().get(CACHED_TAG));
+        // mOverlayView.setFitsSystemWindows(true);
+        // mOverlayView.setFocusable(true);
+        // mOverlayView.setFocusableInTouchMode(true);
+        // mOverlayView.setBackgroundColor(Color.TRANSPARENT);
     }
 
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP_MR1)
     static public void showOverlay() {
-        if (!isOverlayShown) {
-            WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
-            lp.type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY;
-            lp.format = PixelFormat.TRANSLUCENT;
-            lp.flags |= WindowManager.LayoutParams.FLAG_FULLSCREEN;
-            lp.width = WindowManager.LayoutParams.MATCH_PARENT;
-            lp.height = WindowManager.LayoutParams.MATCH_PARENT;
-            lp.gravity = Gravity.TOP;
-            mWindowManager.addView(mOverlayView, lp);
-            isOverlayShown = true;
-        }
+        // if (!isOverlayShown) {
+        //     WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
+        //     lp.type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY;
+        //     lp.format = PixelFormat.TRANSLUCENT;
+        //     lp.flags |= WindowManager.LayoutParams.FLAG_FULLSCREEN;
+        //     lp.width = WindowManager.LayoutParams.MATCH_PARENT;
+        //     lp.height = WindowManager.LayoutParams.MATCH_PARENT;
+        //     lp.gravity = Gravity.TOP;
+        //     mWindowManager.addView(mOverlayView, lp);
+        //     isOverlayShown = true;
+        // }
     }
 
     static public void removeOverlay() {
-        if (isOverlayShown) {
-            mWindowManager.removeView(mOverlayView);
-            isOverlayShown = false;
-        }
+        // if (isOverlayShown) {
+        //     mWindowManager.removeView(mOverlayView);
+        //     isOverlayShown = false;
+        // }
     }
 
     @Override
