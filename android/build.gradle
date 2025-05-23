@@ -22,6 +22,7 @@ rootProject.allprojects {
 apply plugin: 'com.android.library'
 
 android {
+    namespace 'slayer.accessibility.service.flutter_accessibility_service'
     compileSdkVersion 34
 
     compileOptions {
