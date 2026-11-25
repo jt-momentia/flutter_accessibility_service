@@ -23,7 +23,10 @@ void main() {
         case 'performActionById':
           return true;
         case 'showOverlayWindow':
-          return true;
+          throw PlatformException(
+            code: 'ERR:OVERLAY',
+            message: 'Accessibility overlays are disabled in this fork',
+          );
         case 'hideOverlayWindow':
           return true;
         case 'getSystemActions':
@@ -66,12 +69,10 @@ void main() {
     expect(log, isEmpty);
   });
 
-  test('showOverlayWindow method test', () async {
+  test('showOverlayWindow reports that overlays are disabled', () async {
     final result = await FlutterAccessibilityService.showOverlayWindow();
-    expect(result, true);
-    expect(log, <Matcher>[
-      isMethodCall('showOverlayWindow', arguments: null),
-    ]);
+    expect(result, false);
+    expect(log.single.method, 'showOverlayWindow');
   });
 
   test('hideOverlayWindow method test', () async {

@@ -7,6 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:flutter_accessibility_service/constants.dart';
 
+import 'config/overlay_config.dart';
+import 'gesture_description.dart';
+
 class FlutterAccessibilityService {
   FlutterAccessibilityService._();
 
@@ -14,7 +17,10 @@ class FlutterAccessibilityService {
       MethodChannel('x-slayer/accessibility_channel');
   static const EventChannel _eventChannel =
       EventChannel('x-slayer/accessibility_event');
+  static const EventChannel _statusChannel =
+      EventChannel('x-slayer/accessibility_status');
   static Stream<AccessibilityEvent>? _stream;
+  static Stream<bool>? _statusStream;
 
   /// stream the incoming Accessibility events
   static Stream<AccessibilityEvent> get accessStream {
@@ -24,6 +30,18 @@ class FlutterAccessibilityService {
                 (event) => AccessibilityEvent.fromMap(jsonDecode(event)),
               );
       return _stream!;
+    }
+    throw Exception("Accessibility API exclusively available on Android!");
+  }
+
+  /// Emits `true` when the accessibility service is enabled and `false` when
+  /// it is disabled. The current state is always emitted immediately on listen.
+  static Stream<bool> get onAccessibilityServiceStatusChanged {
+    if (Platform.isAndroid) {
+      _statusStream ??= _statusChannel
+          .receiveBroadcastStream()
+          .map<bool>((event) => event as bool);
+      return _statusStream!;
     }
     throw Exception("Accessibility API exclusively available on Android!");
   }
@@ -40,7 +58,7 @@ class FlutterAccessibilityService {
     }
   }
 
-  /// check if accessibility permession is enebaled
+  /// check if accessibility permission is enabled
   static Future<bool> isAccessibilityPermissionEnabled() async {
     try {
       return await _methodChannel
@@ -76,9 +94,9 @@ class FlutterAccessibilityService {
     }
   }
 
-  /// Show an overlay window of `TYPE_ACCESSIBILITY_OVERLAY`
+  /// Accessibility overlays are disabled in this fork; this returns false.
   ///
-  /// Dont forget to add the overlay entrypoint in the main level.
+  /// Don't forget to add the overlay entrypoint in the main level.
   ///
   /// example:
   /// ```dart
@@ -92,9 +110,14 @@ class FlutterAccessibilityService {
   ///   );
   /// }
   /// ```
-  static Future<bool> showOverlayWindow() async {
+  static Future<bool> showOverlayWindow([
+    OverlayConfig config = const OverlayConfig(),
+  ]) async {
     try {
-      return await _methodChannel.invokeMethod<bool?>('showOverlayWindow') ??
+      return await _methodChannel.invokeMethod<bool?>(
+            'showOverlayWindow',
+            config.toJson(),
+          ) ??
           false;
     } on PlatformException catch (error) {
       log("$error");
@@ -117,10 +140,10 @@ class FlutterAccessibilityService {
   /// System actions that correspond to the `GlobalAction`
   static Future<List<GlobalAction>> getSystemActions() async {
     try {
-      final _list = await _methodChannel
+      final list = await _methodChannel
               .invokeMethod<List<dynamic>>('getSystemActions') ??
           [];
-      return _list
+      return list
           .map(
             (e) => GlobalAction.values.firstWhere(
               (element) => element.id == e,
@@ -131,6 +154,54 @@ class FlutterAccessibilityService {
     } on PlatformException catch (error) {
       log("$error");
       return [];
+    }
+  }
+
+  /// Dispatches a gesture on the screen via the accessibility service.
+  ///
+  /// Requires Android 7.0 (API 24) or higher. Returns `true` when the gesture
+  /// completes successfully, or `false` if it was cancelled or the service is
+  /// not running.
+  ///
+  /// Example — tap at (500, 1000):
+  /// ```dart
+  /// await FlutterAccessibilityService.dispatchGesture(
+  ///   GestureDescription(
+  ///     strokes: [
+  ///       GestureStroke(
+  ///         path: [GesturePoint(500, 1000)],
+  ///         startTime: 0,
+  ///         duration: 100,
+  ///       ),
+  ///     ],
+  ///   ),
+  /// );
+  /// ```
+  ///
+  /// Example — swipe up from (500, 1500) to (500, 300):
+  /// ```dart
+  /// await FlutterAccessibilityService.dispatchGesture(
+  ///   GestureDescription(
+  ///     strokes: [
+  ///       GestureStroke(
+  ///         path: [GesturePoint(500, 1500), GesturePoint(500, 300)],
+  ///         startTime: 0,
+  ///         duration: 400,
+  ///       ),
+  ///     ],
+  ///   ),
+  /// );
+  /// ```
+  static Future<bool> dispatchGesture(GestureDescription gesture) async {
+    try {
+      return await _methodChannel.invokeMethod<bool?>(
+            'dispatchGesture',
+            {'strokes': gesture.toJson()},
+          ) ??
+          false;
+    } on PlatformException catch (error) {
+      log("$error");
+      return false;
     }
   }
 
