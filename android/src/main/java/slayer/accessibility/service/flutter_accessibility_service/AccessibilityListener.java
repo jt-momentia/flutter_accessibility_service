@@ -1,20 +1,19 @@
 package slayer.accessibility.service.flutter_accessibility_service;
 
 import static slayer.accessibility.service.flutter_accessibility_service.Constants.*;
-import static slayer.accessibility.service.flutter_accessibility_service.FlutterAccessibilityServicePlugin.CACHED_TAG;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
 import android.annotation.TargetApi;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Color;
-import android.graphics.PixelFormat;
+import android.graphics.Path;
 import android.graphics.Rect;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.util.LruCache;
-import android.view.Gravity;
-import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -27,21 +26,20 @@ import com.google.gson.Gson;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.HashSet;
 import java.util.stream.Collectors;
 
-import io.flutter.embedding.android.FlutterTextureView;
-import io.flutter.embedding.android.FlutterView;
-import io.flutter.embedding.engine.FlutterEngineCache;
-
+import io.flutter.plugin.common.MethodChannel;
 
 public class AccessibilityListener extends AccessibilityService {
-    private static WindowManager mWindowManager;
-    // private static FlutterView mOverlayView;
-    static private boolean isOverlayShown = false;
-    private static final int CACHE_SIZE = 1000;
+    private static AccessibilityListener instance;
+    private static final int CACHE_SIZE = 4 * 1024 * 1024; // 4Mib
+    private static final int maxDepth = 20;
     private static LruCache<String, AccessibilityNodeInfo> nodeMap =
             new LruCache<>(CACHE_SIZE);
+    private static final int DEFAULT_MAX_TREE_DEPTH = 15;
+    private int maximumTreeDepth = DEFAULT_MAX_TREE_DEPTH;
 
     public static AccessibilityNodeInfo getNodeInfo(String id) {
         return nodeMap.get(id);
@@ -90,7 +88,7 @@ public class AccessibilityListener extends AccessibilityService {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
                 data.put("nodeId", parentNodeInfo.getViewIdResourceName());
             }
-            getSubNodes(parentNodeInfo, subNodeActions, traversedNodes);
+            getSubNodes(parentNodeInfo, subNodeActions, traversedNodes, 0);
             data.put("nodesText", nextTexts);
             actions.addAll(parentNodeInfo.getActionList().stream().map(AccessibilityNodeInfo.AccessibilityAction::getId).collect(Collectors.toList()));
             data.put("parentActions", actions);
@@ -143,7 +141,13 @@ public class AccessibilityListener extends AccessibilityService {
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-    void getSubNodes(AccessibilityNodeInfo node, List<HashMap<String, Object>> arr, HashSet<AccessibilityNodeInfo> traversedNodes) {
+    void getSubNodes(AccessibilityNodeInfo node, List<HashMap<String, Object>> arr, HashSet<AccessibilityNodeInfo> traversedNodes, int currentDepth) {
+        if (currentDepth >= maximumTreeDepth || node == null) {
+            if (currentDepth >= maximumTreeDepth) {
+                Log.d("TREE_DEPTH", "Maximum tree depth reached: " + currentDepth);
+            }
+            return;
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
             if (traversedNodes.contains(node)) return;
             traversedNodes.add(node);
@@ -175,7 +179,7 @@ public class AccessibilityListener extends AccessibilityService {
                 AccessibilityNodeInfo child = node.getChild(i);
                 if (child == null)
                     continue;
-                getSubNodes(child, arr, traversedNodes);
+                getSubNodes(child, arr, traversedNodes, currentDepth + 1);
             }
         }
     }
@@ -195,48 +199,64 @@ public class AccessibilityListener extends AccessibilityService {
     @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP_MR1)
     @Override
     protected void onServiceConnected() {
-        // mWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-        // mOverlayView = new FlutterView(getApplicationContext(), new FlutterTextureView(getApplicationContext()));
-        // mOverlayView.attachToFlutterEngine(FlutterEngineCache.getInstance().get(CACHED_TAG));
-        // mOverlayView.setFitsSystemWindows(true);
-        // mOverlayView.setFocusable(true);
-        // mOverlayView.setFocusableInTouchMode(true);
-        // mOverlayView.setBackgroundColor(Color.TRANSPARENT);
-    }
-
-    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP_MR1)
-    static public void showOverlay() {
-        // if (!isOverlayShown) {
-        //     WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
-        //     lp.type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY;
-        //     lp.format = PixelFormat.TRANSLUCENT;
-        //     lp.flags |= WindowManager.LayoutParams.FLAG_FULLSCREEN;
-        //     lp.width = WindowManager.LayoutParams.MATCH_PARENT;
-        //     lp.height = WindowManager.LayoutParams.MATCH_PARENT;
-        //     lp.gravity = Gravity.TOP;
-        //     mWindowManager.addView(mOverlayView, lp);
-        //     isOverlayShown = true;
-        // }
-    }
-
-    static public void removeOverlay() {
-        // if (isOverlayShown) {
-        //     mWindowManager.removeView(mOverlayView);
-        //     isOverlayShown = false;
-        // }
+        instance = this;
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-        removeOverlay();
+        instance = null;
         SharedPreferences sharedPreferences = getSharedPreferences(SHARED_PREFS_TAG, MODE_PRIVATE);
         SharedPreferences.Editor editor = sharedPreferences.edit();
-        editor.remove(ACCESSIBILITY_NODE).commit();
+        editor.remove(ACCESSIBILITY_NODE).apply();
     }
 
     @Override
     public void onInterrupt() {
+    }
+
+    @SuppressWarnings("unchecked")
+    @RequiresApi(api = Build.VERSION_CODES.N)
+    public static void performDispatchGesture(List<Object> strokes, MethodChannel.Result result) {
+        if (instance == null) {
+            result.success(false);
+            return;
+        }
+        try {
+            GestureDescription.Builder gestureBuilder = new GestureDescription.Builder();
+            for (Object strokeObj : strokes) {
+                Map<String, Object> stroke = (Map<String, Object>) strokeObj;
+                List<Object> pointObjs = (List<Object>) stroke.get("path");
+                int startTime = ((Number) stroke.get("startTime")).intValue();
+                int duration = ((Number) stroke.get("duration")).intValue();
+
+                Path path = new Path();
+                if (pointObjs != null && !pointObjs.isEmpty()) {
+                    Map<String, Object> first = (Map<String, Object>) pointObjs.get(0);
+                    path.moveTo(((Number) first.get("x")).floatValue(), ((Number) first.get("y")).floatValue());
+                    for (int i = 1; i < pointObjs.size(); i++) {
+                        Map<String, Object> pt = (Map<String, Object>) pointObjs.get(i);
+                        path.lineTo(((Number) pt.get("x")).floatValue(), ((Number) pt.get("y")).floatValue());
+                    }
+                }
+                gestureBuilder.addStroke(new GestureDescription.StrokeDescription(path, startTime, duration));
+            }
+
+            instance.dispatchGesture(gestureBuilder.build(), new AccessibilityService.GestureResultCallback() {
+                @Override
+                public void onCompleted(GestureDescription gestureDescription) {
+                    new Handler(Looper.getMainLooper()).post(() -> result.success(true));
+                }
+
+                @Override
+                public void onCancelled(GestureDescription gestureDescription) {
+                    new Handler(Looper.getMainLooper()).post(() -> result.success(false));
+                }
+            }, null);
+        } catch (Exception e) {
+            Log.e("GESTURE", "performDispatchGesture: " + e.getMessage());
+            result.success(false);
+        }
     }
 
 

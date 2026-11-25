@@ -3,8 +3,10 @@ import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
+import 'package:flutter_accessibility_service/config/overlay_config.dart';
 import 'package:flutter_accessibility_service/constants.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
+import 'package:flutter_accessibility_service/gesture_description.dart';
 
 import 'package:flutter_accessibility_service_example/overlay.dart';
 
@@ -33,6 +35,8 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   StreamSubscription<AccessibilityEvent>? _subscription;
+  StreamSubscription<bool>? _statusSubscription;
+
   List<AccessibilityEvent?> events = [];
   DateTime eventDateTime = DateTime.now();
   bool foundSearchField = false;
@@ -44,7 +48,7 @@ class _MyAppState extends State<MyApp> {
     super.initState();
   }
 
-  void handleAccessiblityStream() {
+  void handleAccessibilityStream() {
     foundSearchField = false;
     setText = false;
     if (_subscription?.isPaused ?? false) {
@@ -53,6 +57,9 @@ class _MyAppState extends State<MyApp> {
     }
     _subscription =
         FlutterAccessibilityService.accessStream.listen((event) async {
+      if (event.packageName!.contains('slayer.accessibility.service')) {
+        return;
+      }
       setState(() {
         events.add(event);
       });
@@ -63,13 +70,30 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  void handleAccessibilityStatus() {
+    if (_statusSubscription?.isPaused ?? false) {
+      _statusSubscription?.resume();
+      return;
+    }
+    _statusSubscription = FlutterAccessibilityService
+        .onAccessibilityServiceStatusChanged
+        .listen((event) {
+      log("Accessibility Status changed: $event");
+    });
+  }
+
   void handleOverlay(AccessibilityEvent event) async {
     if (event.packageName!.contains('youtube')) {
       log('$event');
     }
-    if (event.packageName!.contains('youtube') && event.isFocused!) {
+    if (event.packageName!.contains('youtube') ||
+        ((event.nodeId != null &&
+                event.nodeId!.contains('com.google.android.youtube'))) &&
+            event.isFocused!) {
       eventDateTime = event.eventTime!;
-      await FlutterAccessibilityService.showOverlayWindow();
+      await FlutterAccessibilityService.showOverlayWindow(
+        const OverlayConfig(),
+      );
     } else if (eventDateTime.difference(event.eventTime!).inSeconds.abs() > 2 ||
         (event.eventType == EventType.typeWindowStateChanged &&
             !event.isFocused!)) {
@@ -158,6 +182,7 @@ class _MyAppState extends State<MyApp> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
+                  spacing: 20.0,
                   children: [
                     TextButton(
                       onPressed: () async {
@@ -166,7 +191,6 @@ class _MyAppState extends State<MyApp> {
                       },
                       child: const Text("Request Permission"),
                     ),
-                    const SizedBox(height: 20.0),
                     TextButton(
                       onPressed: () async {
                         final bool res = await FlutterAccessibilityService
@@ -175,17 +199,25 @@ class _MyAppState extends State<MyApp> {
                       },
                       child: const Text("Check Permission"),
                     ),
-                    const SizedBox(height: 20.0),
                     TextButton(
-                      onPressed: handleAccessiblityStream,
+                      onPressed: handleAccessibilityStream,
                       child: const Text("Start Stream"),
                     ),
-                    const SizedBox(height: 20.0),
+                    TextButton(
+                      onPressed: handleAccessibilityStatus,
+                      child: const Text("Start Status Stream"),
+                    ),
                     TextButton(
                       onPressed: () {
                         _subscription?.cancel();
                       },
                       child: const Text("Stop Stream"),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        _statusSubscription?.cancel();
+                      },
+                      child: const Text("Stop Status Stream"),
                     ),
                     TextButton(
                       onPressed: () async {
@@ -203,6 +235,79 @@ class _MyAppState extends State<MyApp> {
                       },
                       child: const Text("List GlobalActions"),
                     ),
+                    TextButton(
+                      onPressed: () async {
+                        // Tap at the center of a typical screen (500, 1000)
+                        final bool ok =
+                            await FlutterAccessibilityService.dispatchGesture(
+                          const GestureDescription(
+                            strokes: [
+                              GestureStroke(
+                                path: [GesturePoint(500, 1000)],
+                                startTime: 0,
+                                duration: 100,
+                              ),
+                            ],
+                          ),
+                        );
+                        log('Tap gesture result: $ok');
+                      },
+                      child: const Text("Tap Gesture"),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        // Swipe up: from (500, 1500) to (500, 300) over 400 ms
+                        final bool ok =
+                            await FlutterAccessibilityService.dispatchGesture(
+                          const GestureDescription(
+                            strokes: [
+                              GestureStroke(
+                                path: [
+                                  GesturePoint(500, 1500),
+                                  GesturePoint(500, 300),
+                                ],
+                                startTime: 0,
+                                duration: 400,
+                              ),
+                            ],
+                          ),
+                        );
+                        log('Swipe up gesture result: $ok');
+                      },
+                      child: const Text("Swipe Up"),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        // Double-tap at (500, 1000): two quick strokes 50 ms apart
+                        final bool ok =
+                            await FlutterAccessibilityService.dispatchGesture(
+                          const GestureDescription(
+                            strokes: [
+                              GestureStroke(
+                                path: [GesturePoint(500, 1000)],
+                                startTime: 0,
+                                duration: 100,
+                              ),
+                              GestureStroke(
+                                path: [GesturePoint(500, 1000)],
+                                startTime: 150,
+                                duration: 100,
+                              ),
+                            ],
+                          ),
+                        );
+                        log('Double-tap gesture result: $ok');
+                      },
+                      child: const Text("Double Tap"),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          events.clear();
+                        });
+                      },
+                      child: const Text("Clear List"),
+                    ),
                   ],
                 ),
               ),
@@ -211,6 +316,19 @@ class _MyAppState extends State<MyApp> {
                   shrinkWrap: true,
                   itemCount: events.length,
                   itemBuilder: (_, index) => ListTile(
+                    onTap: () {
+                      final haveActions = (events[index]!.subNodes ?? [])
+                          .map((e) => e.actions)
+                          .expand((element) => element!)
+                          .contains(NodeAction.actionClick);
+                      final firstElement = events[index]!.subNodes!.firstWhere(
+                          (element) => element.actions!
+                              .contains(NodeAction.actionClick));
+                      if (haveActions) {
+                        log('$firstElement');
+                        doAction(firstElement, NodeAction.actionClick);
+                      }
+                    },
                     title: Text(events[index]!.packageName!),
                     subtitle: Text(
                       (events[index]!.subNodes ?? [])
